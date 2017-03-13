@@ -1,16 +1,16 @@
 ---
-title: "Estimating Generalized Linear Models for Count Data with the rstanarm Package"
+title: "Estimating Generalized Linear Models for Count Data with rstanarm"
 author: "Jonah Gabry and Ben Goodrich"
-date: "09/03/2015"
+date: "`r Sys.Date()`"
 output:
-  html_document:
-    fig_caption: yes
-    self_contained: no
+  html_vignette:
     toc: yes
+params:
+  EVAL: !r identical(Sys.getenv("NOT_CRAN"), "true")
 ---
 <!--
 %\VignetteEngine{knitr::rmarkdown}
-%\VignetteIndexEntry{Estimating Generalized Linear Models for Count Data with the rstanarm Package}
+%\VignetteIndexEntry{stan_glm: GLMs for Count Data}
 -->
 ```{r, child="children/SETTINGS-knitr.txt"}
 ```
@@ -18,17 +18,19 @@ output:
 ```
 ```{r, child="children/SETTINGS-rstan.txt"}
 ```
+```{r, child="children/SETTINGS-loo.txt"}
+```
 
 # Introduction
 
 This vignette explains how to estimate generalized linear models (GLMs) for 
-count data using the __rstanarm__ package.
+count data using the `stan_glm` function in the __rstanarm__ package.
 
 ```{r, child="children/four_steps.txt"}
 ```
 
-Steps 3 and 4 are covered in more depth by the vignette entitled "How to Use the
-__rstanarm__ Package". This vignette focuses on Step 1 for Poisson and negative
+Steps 3 and 4 are covered in more depth by the vignette entitled ["How to Use the
+__rstanarm__ Package"](rstanarm.html). This vignette focuses on Step 1 for Poisson and negative
 binomial regression models using the `stan_glm` function.
 
 # Likelihood
@@ -62,33 +64,14 @@ $$\frac{g^{-1}(\eta)^y}{y!} e^{-g^{-1}(\eta)} =
 
 # Priors
 
-A full Bayesian analysis requires specifying prior distributions $f(\alpha)$ and
-$f(\boldsymbol{\beta})$ for the intercept and vector of regression coefficients.
-When using `stan_glm`, these distributions can be set using the 
-`prior_intercept` and `prior` arguments. The `stan_glm` function supports a
-variety of prior distributions, which are explained in the __rstanarm__
-documentation (`help(priors, package = 'rstanarm')`).
-
-As an example, suppose we have $K$ predictors and believe --- prior to seeing 
-the data --- that $\alpha, \beta_1, \dots, \beta_K$ are as likely to be positive
-as they are to be negative, but are highly unlikely to be far from zero. These
-beliefs can be represented by normal distributions with mean zero and a small
-scale (standard deviation). To give $\alpha$ and each of the $\beta$s this prior
-(with a scale of 1, say), in the call to `stan_glm` we would include the
-arguments `prior_intercept = normal(0,1)` and 
-`prior = normal(0,1)`.
-
-If, on the other hand, we have less a priori confidence that the parameters will
-be close to zero then we could use a larger scale for the normal distribution 
-and/or a distribution with heavier tails than the normal like the Student t 
-distribution. __Step 1__ in the "How to Use the __rstanarm__ Package" vignette 
-discusses one such example.
+```{r, child="children/stan_glm_priors.txt"}
+```
 
 # Posterior
 
-With independent prior distributions, the joint posterior distribution for
-$\alpha$ and $\boldsymbol{\beta}$ is proportional to the product of the priors 
-and the $N$ likelihood contributions:
+With independent prior distributions, the joint posterior distribution for 
+$\alpha$ and $\boldsymbol{\beta}$ in the Poisson model is proportional to the
+product of the priors and the $N$ likelihood contributions:
 
 $$f\left(\alpha,\boldsymbol{\beta} | \mathbf{y},\mathbf{X}\right) \propto
   f\left(\alpha\right) \times \prod_{k=1}^K f\left(\beta_k\right) \times
@@ -121,20 +104,20 @@ the __Likelihood__ section above in that the rate parameter $\lambda_i =
 exp(\eta_i)$ is multiplied by the exposure $u_i$ giving us 
 $y_i \sim Poisson(u_i \lambda_i)$. This is equivalent to adding $\ln{(u_i)}$ 
 to the linear predictor $\eta_i$ and it can be specified using the `offset` 
-argument to `stan_glm`:
+argument to `stan_glm`.
 
-```{r, ROACHES-fit}
+```{r, count-roaches-mcmc, results="hide"}
 library(rstanarm)
+data(roaches)
 
-# Load data and rescale
-roaches <- read.csv(file.path("data", "roaches.csv.xz"))
+# Rescale
 roaches$roach1 <- roaches$roach1 / 100
 # Estimate original model
-glm1 <- glm(y ~ roach1 + treatment + senior, data = roaches,
-            family = poisson, offset = log(exposure2))
+glm1 <- glm(y ~ roach1 + treatment + senior, offset = log(exposure2), 
+            data = roaches, family = poisson)
 # Estimate Bayesian version with stan_glm
-stan_glm1 <- stan_glm(y ~ roach1 + treatment + senior, data = roaches, 
-                      family = poisson, offset = log(exposure2), 
+stan_glm1 <- stan_glm(y ~ roach1 + treatment + senior, offset = log(exposure2),
+                      data = roaches, family = poisson, 
                       prior = normal(0,2.5), prior_intercept = normal(0,5),
                       chains = CHAINS, cores = CORES, seed = SEED)
 ```
@@ -157,9 +140,10 @@ related to GLM estimation.
 Here are the point estimates and uncertainties from the `glm` fit and `stan_glm`
 fit, which we see are nearly identical:
 
-```{r, ROACHES-glm-ests}
+```{r, count-roaches-comparison}
 round(rbind(glm = coef(glm1), stan_glm = coef(stan_glm1)), digits = 2)
-rbind(glm = summary(glm1)$coefficients[, "Std. Error"], stan_glm = se(stan_glm1))
+round(rbind(glm = summary(glm1)$coefficients[, "Std. Error"], 
+            stan_glm = se(stan_glm1)), digits = 3)
 ```
 
 (Note: the dataset we have is slightly different from the one used in Gelman and
@@ -176,7 +160,7 @@ On the other hand, the __rstanarm__ package makes this easy. We can generate
 replicated datasets with a single line of code using the `posterior_predict`
 function:
 
-```{r, ROACHES-posterior_predict}
+```{r, count-roaches-posterior_predict}
 yrep <- posterior_predict(stan_glm1)
 ```
 
@@ -186,20 +170,20 @@ $S \times N$ matrix, where $S$ is the size of the posterior sample and $N$
 is the number of data points. Each row of `yrep` represents a full dataset
 generated from the posterior predictive distribution. For more about the 
 importance of the `posterior_predict` function, see the 
-"How to Use the __rstanarm__ Package" vignette.
+["How to Use the __rstanarm__ Package"](rstanarm.html) vignette.
 
-Gelman and Hill take the simulated datasets and for each of them  
-compute the proportion of zeros and compare to the observed proportion of 
-in the original data. We can do this easily using the `ppcheck` function, which
-generates graphical comparisons of the data `y` and replicated datasets `yrep`.
+Gelman and Hill take the simulated datasets and for each of them compute the 
+proportion of zeros and compare to the observed proportion in the original 
+data. We can do this easily using the `pp_check` function, which generates 
+graphical comparisons of the data `y` and replicated datasets `yrep`.
 
-```{r, ROACHES-ppcheck}
+```{r, count-roaches-plot-pp_check1}
 prop_zero <- function(y) mean(y == 0)
-(prop_zero_test1 <- ppcheck(stan_glm1, check = "test", test = prop_zero))
+(prop_zero_test1 <- pp_check(stan_glm1, plotfun = "stat", stat = "prop_zero"))
 ```
 
 The value of the test statistic (in this case the proportion of zeros) computed 
-from the sample `y` is the vertical blue line. More than 30% of these
+from the sample `y` is the dark blue vertical line. More than 30% of these
 observations are zeros, whereas the replicated datasets all contain less than 1%
 zeros. This is a sign that we should consider a model that more accurately
 accounts for the large proportion of zeros in the data. Gelman and Hill show how
@@ -208,20 +192,21 @@ of a different `stan_glm` model, here we will instead try
 [negative binomial](https://en.wikipedia.org/wiki/Negative_binomial_distribution) 
 regression, which is also used for overdispersed or zero-inflated count data.
 The negative binomial distribution allows the (conditional) mean and variance of
-$y$ to differ unlike the Poisson distribution. We just need to change the
-`family` we specify in the call to `stan_glm`, which we now set to
-`neg_binomial_2` instead of `poisson`:
+$y$ to differ unlike the Poisson distribution. To fit the negative binomial
+model can either use the `stan_glm.nb` function or, equivalently, change the
+`family` we specify in the call to `stan_glm` to `neg_binomial_2` instead of
+`poisson`. To do the latter we can just use `update`:
 
-```{r, ROACHES-negbin}
+```{r, count-roaches-negbin, results="hide"}
 stan_glm2 <- update(stan_glm1, family = neg_binomial_2) 
 ```
 
-We now use `ppcheck` again, this time to check the proportion of zeros in the
+We now use `pp_check` again, this time to check the proportion of zeros in the
 replicated datasets under the negative binomial model:
 
-```{r, ROACHES-negbin-ppcheck, fig.width=9}
+```{r, count-roaches-plot-pp_check2, fig.width=7, out.width="80%"}
 library(gridExtra)
-prop_zero_test2 <- ppcheck(stan_glm2, check = "test", test = prop_zero)
+prop_zero_test2 <- pp_check(stan_glm2, plotfun = "stat", stat = "prop_zero")
 # Show graphs for Poisson and negative binomial side by side
 grid.arrange(prop_zero_test1 + ggtitle("Poisson"), 
              prop_zero_test2 + ggtitle("Negative Binomial"), 
@@ -233,21 +218,25 @@ near the center of the distribution of the proportion of zeros among the
 replicated datasets. The observed proportion of zeros is quite plausible under
 this model.
 
-We could have also made these plots manually without using the `ppcheck` function 
-because we have the `yrep` datasets created by `posterior_predict`. The `ppcheck`
+We could have also made these plots manually without using the `pp_check` function 
+because we have the `yrep` datasets created by `posterior_predict`. The `pp_check`
 function takes care of this for us, but `yrep` can be used directly to carry out 
-other posterior predictive checks that aren't automated by `ppcheck`. 
+other posterior predictive checks that aren't automated by `pp_check`. 
 
 When we comparing the models using the __loo__ package we also see a clear
-preference for the negative binomial model:
+preference for the negative binomial model
 
-```{r, ROACHES-loo}
-library(loo)
-loo1 <- loo(stan_glm1, cores = CORES)
-loo2 <- loo(stan_glm2, cores = CORES)
-compare(loo1, loo2)
+```{r, count-roaches-loo}
+loo1 <- loo(stan_glm1)
+loo2 <- loo(stan_glm2)
+compare_models(loo1, loo2)
 ```
 
-The weight of 1 assigned to the negative binomial is not surprising given 
-the better fit we've already observed from the posterior predictive checks.
+which is not surprising given the better fit we've already observed from the
+posterior predictive checks.
 
+
+# References
+
+Gelman, A. and Hill, J. (2007). _Data Analysis Using Regression and
+Multilevel/Hierarchical Models._ Cambridge University Press, Cambridge, UK.

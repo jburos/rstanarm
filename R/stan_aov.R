@@ -1,20 +1,21 @@
-#  This file is part of rstanarm.
-#  Copyright (C) 2015 Stan Development Team
+# Part of the rstanarm package for estimating model parameters
+# Copyright (C) 2015, 2016 Trustees of Columbia University
 #  Copyright (C) 1995-2015 The R Core Team
 #  Copyright (C) 1998 B. D. Ripley
-#
-#  This program is free software; you can redistribute it and/or modify
-#  it under the terms of the GNU General Public License as published by
-#  the Free Software Foundation; either version 3 of the License, or
-#  (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  A copy of the GNU General Public License is available at
-#  http://www.r-project.org/Licenses/
+# 
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 3
+# of the License, or (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 #' @rdname stan_lm
 #' @export
@@ -22,20 +23,20 @@
 #'   \code{FALSE}) indicating whether \code{\link[stats]{proj}} should be called
 #'   on the fit.
 #' @examples
-#' \dontrun{
+#' \donttest{
 #' stan_aov(yield ~ block + N*P*K, data = npk, contrasts = "contr.poly",
-#'          prior = R2(0.5), seed = 12345, cores = 1) 
+#'          prior = R2(0.5), seed = 12345) 
 #' }
 #'             
 stan_aov <- function(formula, data = NULL, projections = FALSE,
                      contrasts = NULL, ...,
                      prior = R2(stop("'location' must be specified")), 
                      prior_PD = FALSE, 
-                     algorithm = c("sampling", "optimizing"), 
+                     algorithm = c("sampling", "meanfield", "fullrank"), 
                      adapt_delta = NULL) {
     # parse like aov() does
-    Terms <- if(missing(data)) terms(formula, "Error")
-    else terms(formula, "Error", data = data)
+    Terms <- if(missing(data)) 
+      terms(formula, "Error") else terms(formula, "Error", data = data)
     indError <- attr(Terms, "specials")$Error
     ## NB: this is only used for n > 1, so singular form makes no sense
     ## in English.  But some languages have multiple plurals.
@@ -48,9 +49,10 @@ stan_aov <- function(formula, data = NULL, projections = FALSE,
     ## need rstanarm:: for non-standard evaluation
     lmcall[[1L]] <- quote(rstanarm::stan_lm)
     lmcall$singular.ok <- FALSE
-    if(projections) qr <- lmcall$qr <- TRUE
+    if (projections) 
+      qr <- lmcall$qr <- TRUE
     lmcall$projections <- NULL
-    if(is.null(indError)) {
+    if (is.null(indError)) {
         ## no Error term
         fit <- eval(lmcall, parent.frame())
         fit$terms <- Terms
@@ -59,15 +61,16 @@ stan_aov <- function(formula, data = NULL, projections = FALSE,
         beta <- extract(fit$stanfit, pars = "beta", permuted = FALSE)
         pnames <- dimnames(beta)$parameters
         rownames(R) <- colnames(R)
-        R <- R[pnames,pnames,drop = FALSE]
+        R <- R[pnames, pnames, drop = FALSE]
         effects <- apply(beta, 1:2, FUN = function(x) R %*% x)
         effects <- aperm(effects, c(2,3,1))
         fit$effects <- effects
         class(fit) <- c("stanreg", "aov", "lm")
-        if(projections) fit$projections <- proj(fit)
+        if (projections) 
+          fit$projections <- proj(fit)
         fit$call <- Call
         return(fit)
-    } else {
+    } else { # nocov start
         stop("Error terms not supported yet")
         if(pmatch("weights", names(match.call()), 0L))
             stop("weights are not supported in a multistratum aov() fit")
@@ -106,11 +109,11 @@ stan_aov <- function(formula, data = NULL, projections = FALSE,
         ## we want this to label the rows of qtx, not cols of x.
         maxasgn <- length(nmstrata) - 1L
         nobs <- NROW(qty)
-	len <- if(nobs > rank.e) {
-	    asgn.e[(rank.e+1):nobs] <- maxasgn + 1L
-	    nmstrata <- c(nmstrata, "Within")
-	    maxasgn + 2L
-	} else maxasgn + 1L
+	      len <- if(nobs > rank.e) {
+	        asgn.e[(rank.e+1):nobs] <- maxasgn + 1L
+	        nmstrata <- c(nmstrata, "Within")
+	        maxasgn + 2L
+	      } else maxasgn + 1L
         result <- setNames(vector("list", len), nmstrata)
         lmcall$formula <- form <-
             update(formula, paste(". ~ .-", deparse(errorterm, width.cutoff = 500L, backtick = TRUE)))
@@ -168,5 +171,5 @@ stan_aov <- function(formula, data = NULL, projections = FALSE,
         attr(result, "contrasts") <- cons
         attr(result, "xlevels") <- xlev
         result
-    }
+    } # nocov end
 }

@@ -4,8 +4,8 @@ demo("SETUP", package = "rstanarm", verbose = FALSE, echo = FALSE, ask = FALSE)
 source(paste0(ROOT, "ARM/Ch.9/electric_grade4.data.R"), local = DATA_ENV, 
        verbose = FALSE)
 
-post1 <- stan_lm(post_test ~ treatment * pre_test, data = DATA_ENV, seed = SEED, 
-                 prior = R2(0.75), adapt_delta = 0.99)
+post1 <- stan_lm(post_test ~ treatment * pre_test, data = DATA_ENV, 
+                 prior = R2(0.75), seed = SEED, refresh = REFRESH)
 post1 # underfitting but ok because it is an experiment
 plot(post1)
 
@@ -16,14 +16,14 @@ mean(diff)
 sd(diff) # much larger than in ARM
 hist(diff, prob = TRUE, main = "", xlab = "Estimated Average Treatment Effect", las = 1)
 
+
 stopifnot(require(gridExtra))
 plots <- sapply(1:4, simplify = FALSE, FUN = function(k) {
   source(paste0(ROOT, "ARM/Ch.9/electric_grade", k, "_supp.data.R"), 
          local = DATA_ENV, verbose = FALSE)
   out <- plot(stan_lm(post_test ~ supp + pre_test, data = DATA_ENV, 
-                    seed = SEED, prior = R2(0.75, what = "mean"), 
-                    adapt_delta = 0.99),
-            pars = c("mean_PPD"), include = FALSE)
+                    seed = SEED, refresh = REFRESH,
+                    prior = R2(0.75, what = "mean")))
   out + ggtitle(paste("Grade =", k))
 })
 marrangeGrob(plots, nrow = 2, ncol = 2)

@@ -1,4 +1,25 @@
+# Part of the rstanarm package for estimating model parameters
+# Copyright (C) 2015, 2016 Trustees of Columbia University
+# 
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 3
+# of the License, or (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
 #' Predict method for stanreg objects
+#' 
+#' This method is primarily intended to be used only for models fit using 
+#' optimization. For models fit using MCMC or one of the variational
+#' approximations, see \code{\link{posterior_predict}}.
 #' 
 #' @export
 #' @templateVar stanregArg object
@@ -15,37 +36,49 @@
 #' @return A vector if \code{se.fit} is \code{FALSE} and a list if \code{se.fit}
 #'   is \code{TRUE}.
 #'
-#' @seealso \code{\link{posterior_predict}}, \code{\link[stats]{predict.glm}}
+#' @seealso \code{\link{posterior_predict}}
 #' 
-predict.stanreg <- function(object, ..., newdata = NULL, 
-                            type = c("link", "response"), se.fit = FALSE) {
+predict.stanreg <- function(object,
+                            ...,
+                            newdata = NULL,
+                            type = c("link", "response"),
+                            se.fit = FALSE) {
+  if (is.mer(object))
+    stop(
+      "'predict' is not available for models fit with ",
+      object$call[[1]],
+      ". Please use the 'posterior_predict' function instead.",
+      call. = FALSE
+    )
   
   type <- match.arg(type)
   if (!se.fit && is.null(newdata)) {
-    if (type == "link") return(object$linear.predictors)
-    else return(object$fitted.values)
+    preds <- if (type == "link") 
+      object$linear.predictors else object$fitted.values
+    return(preds)
   }
-  if (used.sampling(object) && type == "response")
-    stop("type='response' should not be used for models estimated by MCMC.",
-         "Use posterior_predict() to draw from the posterior predictive distribution.",
-         call. = FALSE)
+  if (!used.optimizing(object) && type == "response")
+    stop(
+      "type='response' should not be used for models estimated by MCMC",
+      "\nor variational approximation. Instead, use the 'posterior_predict' ",
+      "function to draw \nfrom the posterior predictive distribution.",
+      call. = FALSE
+    )
   
   dat <- pp_data(object, newdata)
-  stanmat <- if (used.sampling(object))
-    as.matrix.stanreg(object) else stop("MLE not implemented yet")
-  beta <- stanmat[, 1:ncol(dat$x)]
+  stanmat <- as.matrix.stanreg(object)
+  beta <- stanmat[, seq_len(ncol(dat$x))]
   eta <- linear_predictor(beta, dat$x, dat$offset)
-  if (is(object, "lmerMod")) {
-    b <- stanmat[, .bnames(colnames(stanmat)), drop = FALSE]
-    eta <- eta + linear_predictor(b, dat$z)
+  if (type == "response") {
+    inverse_link <- linkinv(object)
+    eta <- inverse_link(eta)
+    if (is(object, "polr") && ("alpha" %in% colnames(stanmat)))
+      eta <- apply(eta, 1L, FUN = `^`, e2 = stanmat[, "alpha"])
   }
   fit <- colMeans(eta)
-  if (type == "response") { 
-    stop("MLE not implemented yet")
-  }
-  if (!se.fit) return(fit)
-  else {
-    se.fit <- apply(eta, 2L, sd)
-    nlist(fit, se.fit) 
-  }
+  if (!se.fit)
+    return(fit)
+  
+  se.fit <- apply(eta, 2L, sd)
+  nlist(fit, se.fit)
 }

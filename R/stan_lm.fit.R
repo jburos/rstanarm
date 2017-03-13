@@ -1,104 +1,81 @@
-# This file is part of rstanarm.
-# Copyright 2013 Stan Development Team
-# rstanarm is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Part of the rstanarm package for estimating model parameters
+# Copyright (C) 2013, 2014, 2015, 2016 Trustees of Columbia University
 # 
-# rstanarm is distributed in the hope that it will be useful,
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 3
+# of the License, or (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 # 
 # You should have received a copy of the GNU General Public License
-# along with rstanarm.  If not, see <http://www.gnu.org/licenses/>.
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 #' @rdname stan_lm
 #' @export
 stan_lm.wfit <- function(x, y, w, offset = NULL, singular.ok = TRUE, ...,
                          prior = R2(stop("'location' must be specified")), 
-                         prior_PD = FALSE, 
-                         algorithm = c("sampling", "optimizing"),
+                         prior_intercept = NULL, prior_PD = FALSE, 
+                         algorithm = c("sampling", "meanfield", "fullrank"),
                          adapt_delta = NULL) {
-  if (NCOL(y) > 1) stop("multivariate responses not supported yet")
-  if (colnames(x)[1] == "(Intercept)") {
-    has_intercept <- 1L
-    x <- x[,-1,drop=FALSE]
-  }
-  else has_intercept <- 0L
-  ols <- lsfit(x, y, w, has_intercept == 1L)
-  if (!is.null(w)) x <- sqrt(w) * x
-
-  J <- 1L
-  N <- array(nrow(x), c(J))
-  K <- ncol(x)
-  if (K == 0) stop("'stan_lm.fit' is not suitable for estimating a mean ",
-                   "use 'stan_glm.fit' with 'family = gaussian()' instead")
-  b <- coef(ols)
-  b[is.na(b)] <- 0.0
-  if (has_intercept == 1L) b <- array(b[-1], c(J,K))
-  else b <- array(b, c(J,K))
-  
-  SSR <- array(crossprod(residuals(ols))[1], J)
-  
-  s_X <- array(apply(x, 2, sd), c(J,K))
-  xbar <- array(colMeans(x), c(J,K))
-  x <- sweep(x, 2, xbar, FUN = "-")
-  XtX <- crossprod(x)
-  dim(XtX) <- c(J, K, K)
-  s_Y <- array(sd(y), J)
-  if (isTRUE(all.equal(matrix(0, J, K), xbar))) center_y <- mean(y)
-  else center_y <- 0
-  ybar <- array(mean(y), J)
-
-  eta <- prior$eta <- make_eta(prior$location, prior$what, K = K)
-  
-  # initial values
-  L <- t(chol(cor(x)))
-  R2 <- array(1 - SSR[1] / ((N - 1) * var(y)), J)
-  log_omega <- array(0, ifelse(prior_PD == 0, J, 0))
-  init_fun <- function(chain_id) {
-    return(list(L = L, R2 = R2, log_omega = log_omega))
-  }
   algorithm <- match.arg(algorithm)
-  stanfit <- stanmodels$lm
-  standata <- nlist(K, has_intercept, prior_PD, J, N, xbar, s_X, XtX, 
-                    ybar, center_y, s_Y, b, SSR, eta)
-  pars <- c(if (has_intercept) "alpha", "beta", "sigma", 
-            if (prior_PD == 0) "log_omega", "mean_PPD")
-  if (algorithm == "optimizing") {
-    stop("'optimizing' not supported for this model")
+  if (NCOL(y) > 1) 
+    stop("Multivariate responses not supported yet.")
+  if (colnames(x)[1L] == "(Intercept)") {
+    has_intercept <- 1L
+    x <- x[, -1L, drop = FALSE]
+    if (NCOL(x) == 0L)
+      stop("'stan_lm' is not suitable for estimating a mean.",
+           "\nUse 'stan_glm' with 'family = gaussian()' instead.", 
+           call. = FALSE)
+  } else {
+    has_intercept <- 0L
   }
-  # else if (algorithm %in% c("meanfield", "fullrank")) {
-  #   stanfit <- rstan::vb(stanfit, data = standata, pars = pars, 
-  #                        algorithm = algorithm, ...)
-  # }
-  sampling_args <- set_sampling_args(
-    object = stanfit, 
-    prior = prior,
-    user_dots = list(...), 
-    user_adapt_delta = adapt_delta, 
-    init = init_fun, data = standata, pars = pars, show_messages = FALSE)
-  stanfit <- do.call(sampling, sampling_args)
+  if (nrow(x) < ncol(x))
+    stop("stan_lm with more predictors than data points is not yet enabled.", 
+         call. = FALSE)
   
-  parameters <- dimnames(stanfit)$parameters
-  new_names <- c(if (has_intercept) "(Intercept)", colnames(x), "sigma", 
-                 if (prior_PD == 0) "log-fit_ratio", "mean_PPD", "log-posterior")
-  stanfit@sim$fnames_oi <- new_names
-  return(stanfit)
+  xbar <- colMeans(x)
+  x <- sweep(x, 2L, xbar, FUN = "-")
+  ybar <- mean(y)
+  y <- y - ybar
+  if(length(w) == 0) ols <- lm.fit(x, y)
+  else ols <- lm.wfit(x, y, w)
+  b <- coef(ols)
+  NAs <- is.na(b)
+  if (any(NAs) && !singular.ok) {
+    x <- x[,!NAs, drop = FALSE]
+    xbar <- xbar[!NAs]
+    ols <- lsfit(x, y, w, intercept = FALSE)
+    b <- coef(ols)
+  }
+  else b[NAs] <- 0.0
+  
+  if (!is.null(w)) 
+    x <- sqrt(w) * x
+
+  return(stan_biglm.fit(b, R = qr.R(ols$qr), SSR = crossprod(residuals(ols))[1], 
+                        N = nrow(x), xbar = xbar, ybar = ybar, s_y = sd(y),
+                        has_intercept = has_intercept, ...,
+                        prior = prior, prior_intercept = prior_intercept,
+                        prior_PD = prior_PD, algorithm = algorithm, 
+                        adapt_delta = adapt_delta))
+  
 }
 
 #' @rdname stan_lm
 #' @export
 stan_lm.fit <- function(x, y, offset = NULL, singular.ok = TRUE, ...,
                         prior = R2(stop("'location' must be specified")), 
-                        prior_PD = FALSE, 
-                        algorithm = c("sampling", "optimizing"), 
-                        adapt_delta = NULL) {
-
-  call <- match.call()
+                        prior_intercept = NULL, prior_PD = FALSE, 
+                        algorithm = c("sampling", "meanfield", "fullrank"), 
+                        adapt_delta = NULL) { # nocov start
   mf <- match.call(expand.dots = FALSE)
   mf[[1L]] <- as.name("stan_lm.wfit")
   mf$w <- as.name("NULL")
-  return(eval(mf, parent.frame()))
-}
+  eval(mf, parent.frame())
+} # nocov end

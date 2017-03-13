@@ -1,46 +1,63 @@
 Package: rstanarm
 Type: Package
-Title: Applied Regression Modeling via RStan
-Version: 2.8.1
-Date: 2015-11-01
+Title: Bayesian Applied Regression Modeling via Stan
+Version: 2.14.1
+Date: 2017-01-16
 Authors@R: c(person("Jonah", "Gabry", email = "jsg2201@columbia.edu", role = "aut"),
+             person("Imad", "Ali", role = "ctb"),
+             person("Trustees of", "Columbia University", role = "cph"),
+             person("R Core", "Deveopment Team", role = "cph", 
+                     comment = "R/stan_aov.R"),
+             person("Douglas", "Bates", role = "cph", comment = "R/pp_data.R"),
+             person("Martin", "Maechler", role = "cph", comment = "R/pp_data.R"),
+             person("Ben", "Bolker", role = "cph", comment = "R/pp_data.R"),
+             person("Steve", "Walker", role = "cph", comment = "R/pp_data.R"),
+             person("Brian", "Ripley", role = "cph", 
+                    comment = "R/stan_aov.R, R/stan_polr.R"),
+             person("William", "Venables", role = "cph", comment = "R/stan_polr.R"),
              person("Ben", "Goodrich", email = "benjamin.goodrich@columbia.edu", 
                     role = c("cre", "aut")))
-Description: Convenient interface for applied regression models using RStan,
-    the R interface to the Stan C++ package. Models are specified with customary
-    R modeling syntax and can be estimated by performing full Bayesian inference
-    or optimization of a (perhaps penalized) likelihood function.
+Description: Estimates pre-compiled regression models using the 'rstan' package,
+    which provides the R interface to the Stan C++ library for Bayesian estimation.
+    Users specify models via the customary R syntax with a formula and data.frame
+    plus some additional arguments for priors.
 License: GPL (>=3)
 Depends:
     R (>= 3.0.2),
-    Rcpp (>= 0.11.0),
+    Rcpp (>= 0.12.0),
+    survival (>= 2.40.1),
+    methods
 Imports:
-    ggplot2,
+    bayesplot (>= 1.1.0),
+    data.table (>= 1.10.0),
+    ggplot2 (>= 2.2.1),
     lme4 (>= 1.1-8),
-    loo (>= 0.1.3),
-    methods,
-    rstan (>= 2.8.1),
-    shinystan (>= 2.0.1),
+    loo (>= 1.0.0),
+    Matrix,
+    nlme (>= 3.1-124),
+    rstan (>= 2.14.1),
+    rstantools (>= 1.1.0),
+    shinystan (>= 2.2.1),
     stats,
     utils
 Suggests:
     arm,
-    gamm4,
-    grDevices,
+    betareg,
+    digest,
     gridExtra,
     HSAUR3,
     KernSmooth,
-    knitr,
+    knitr (>= 1.15.1),
     MASS,
-    RSvgDevice,
-    testthat
-LinkingTo: StanHeaders (>= 2.8.0), rstan (>= 2.8.1), BH (>= 1.58.0), Rcpp (>=
-    0.11.0), RcppEigen
+    mgcv,
+    rmarkdown,
+    roxygen2,
+    testthat (>= 1.0.2)
+LinkingTo: StanHeaders (>= 2.14.0), rstan (>= 2.14.1), BH (>= 1.62.0), Rcpp (>=
+    0.12.0), RcppEigen
 VignetteBuilder: knitr
 LazyData: true
 NeedsCompilation: yes
 URL: https://groups.google.com/forum/#!forum/stan-users, http://mc-stan.org/
 BugReports: https://github.com/stan-dev/rstanarm/issues
-RcppModules: stan_fit4bernoulli_mod, stan_fit4binomial_mod,
-    stan_fit4continuous_mod, stan_fit4count_mod, stan_fit4lm_mod, stan_fit4polr_mod
-RoxygenNote: 5.0.0
+RoxygenNote: 5.0.1

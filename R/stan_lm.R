@@ -1,25 +1,29 @@
-# This file is part of rstanarm.
-# Copyright 2013 Stan Development Team
-# rstanarm is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Part of the rstanarm package for estimating model parameters
+# Copyright (C) 2013, 2014, 2015, 2016 Trustees of Columbia University
 # 
-# rstanarm is distributed in the hope that it will be useful,
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 3
+# of the License, or (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 # 
 # You should have received a copy of the GNU General Public License
-# along with rstanarm.  If not, see <http://www.gnu.org/licenses/>.
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-#' Regularized linear models via Stan
+#' Bayesian regularized linear models via Stan
 #'
 #' Bayesian inference for linear modeling with regularizing priors on the 
 #' model parameters that are driven by prior beliefs about \eqn{R^2}, the 
 #' proportion of variance in the outcome attributable to the predictors. See 
-#' \code{\link{priors}} for an explanation of this critical point.
-#' 
+#' \code{\link{priors}} for an explanation of this critical point. 
+#' \code{\link{stan_glm}} with \code{family="gaussian"} also estimates a 
+#' linear model with normally-distributed errors and allows for various other 
+#' priors on the coefficients.
 #' 
 #' @export
 #' @templateVar fun stan_lm, stan_aov
@@ -35,28 +39,32 @@
 #' @template args-same-as-rarely-2
 #' @template args-x-y
 #' @template args-dots
+#' @template args-prior_PD
 #' @template args-algorithm
 #' @template args-adapt_delta
 #'
 #' @param w Same as in \code{\link[stats]{lm.wfit}} but rarely specified.
 #' @param prior Must be a call to \code{\link{R2}} with its 
-#'   \code{location} argument specified.
-#' @param prior_PD A logical scalar (defaulting to \code{FALSE}) indicating
-#'   whether to draw from the prior predictive distribution instead of
-#'   conditioning on the outcome. Note that if \code{TRUE}, the draws are
-#'   merely proportional to the actual distribution because of an improper
-#'   prior on a scale parameter.
+#'   \code{location} argument specified or \code{NULL}, which would
+#'   indicate a standard uniform prior for the \eqn{R^2}.
+#' @param prior_intercept Either \code{NULL} (the default) or a call to
+#'   \code{\link{normal}}. If a \code{\link{normal}} prior is specified
+#'   without a \code{scale}, then the standard deviation is taken to be
+#'   the marginal standard deviation of the outcome divided by the square
+#'   root of the sample size, which is legitimate because the marginal
+#'   standard deviation of the outcome is a primitive parameter being
+#'   estimated.
 #'
 #'
 #' @details The \code{stan_lm} function is similar in syntax to the 
-#'   \code{\link[stats]{lm}} function but rather than choosing the parameters
-#'   to minimize the sum of squared residuals, samples from the posterior
-#'   distribution (if \code{algorithm = "sampling"}) are drawn using MCMC. The
-#'   \code{stan_lm} function has a formula-based interface and would usually
-#'   be called by users but the \code{stan_lm.fit} and \code{stan_lm.wfit}
-#'   functions might be called by other functions that parse the data 
-#'   themselves and are analagous to \code{\link[stats]{lm.fit}} and
-#'   \code{\link[stats]{lm.wfit}} respectively.
+#'   \code{\link[stats]{lm}} function but rather than choosing the parameters to
+#'   minimize the sum of squared residuals, samples from the posterior 
+#'   distribution are drawn using MCMC (if \code{algorithm} is
+#'   \code{"sampling"}). The \code{stan_lm} function has a formula-based
+#'   interface and would usually be called by users but the \code{stan_lm.fit}
+#'   and \code{stan_lm.wfit} functions might be called by other functions that
+#'   parse the data themselves and are analagous to \code{\link[stats]{lm.fit}}
+#'   and \code{\link[stats]{lm.wfit}} respectively.
 #'      
 #'   In addition to estimating \code{sigma} --- the standard deviation of the
 #'   normally-distributed errors --- this model estimates a positive parameter
@@ -65,8 +73,6 @@
 #'   by a multiplicative factor equal to the square of \code{fit_ratio}.
 #'   Conversely if \code{log-fit_ratio} is negative, then the model underfits.
 #'   Given the regularizing nature of the priors, a slight underfit is good.
-#'   However, even if the \emph{marginal} posterior variance is off, the 
-#'   \emph{conditional} variance (\code{sigma}) may still be reasonable.
 #'   
 #'   Finally, the posterior predictive distribution is generated with the
 #'   predictors fixed at their sample means. This quantity is useful for
@@ -78,57 +84,73 @@
 #'   calls \code{stan_lm} with dummy variables to do a Bayesian analysis of
 #'   variance.
 #'   
+#'   
+#' @references 
+#' Lewandowski, D., Kurowicka D., and Joe, H. (2009). Generating random
+#' correlation matrices based on vines and extended onion method. 
+#' \emph{Journal of Multivariate Analysis}. \strong{100}(9), 1989--2001.
 #' 
 #' @seealso 
 #' The vignettes for \code{stan_lm} and \code{stan_aov}, which have more
 #' thorough descriptions and examples.
 #' 
 #' Also see \code{\link{stan_glm}}, which --- if \code{family =
-#' gaussian(link = "identity")} --- also estimates a linear model with
+#' gaussian(link="identity")} --- also estimates a linear model with
 #' normally-distributed errors but specifies different priors.
 #'   
 #'   
 #' @examples
-#' \dontrun{
-#' (fit <- stan_lm(mpg ~ wt + qsec + am, data = mtcars, prior = R2(0.75), seed = 12345))
-#' plot(fit)
-#' ppcheck(fit, check = "dist", nreps = 25)
-#' }
+#' (fit <- stan_lm(mpg ~ wt + qsec + am, data = mtcars, prior = R2(0.75), 
+#'                 # the next line is only to make the example go fast enough
+#'                 chains = 1, iter = 1000, seed = 12345))
+#' plot(fit, prob = 0.8)
+#' plot(fit, "hist", pars = c("wt", "am", "qsec", "sigma"), 
+#'      transformations = list(sigma = "log"))
 #' 
 stan_lm <- function(formula, data, subset, weights, na.action,
                     model = TRUE, x = FALSE, y = FALSE, 
                     singular.ok = TRUE, contrasts = NULL, offset, ...,
                     prior = R2(stop("'location' must be specified")), 
-                    prior_PD = FALSE, algorithm = c("sampling", "optimizing"), 
+                    prior_intercept = NULL,
+                    prior_PD = FALSE, 
+                    algorithm = c("sampling", "meanfield", "fullrank"), 
                     adapt_delta = NULL) {
   
-  call <- match.call()
+  algorithm <- match.arg(algorithm)
+  validate_glm_formula(formula)
+  call <- match.call(expand.dots = TRUE)
   mf <- match.call(expand.dots = FALSE)
   mf[[1L]] <- as.name("lm")
   mf$x <- mf$y <- mf$singular.ok <- TRUE
   mf$qr <- FALSE
-  mf$prior <- NULL
-  
+  mf$prior <- mf$prior_intercept <- mf$prior_PD <- mf$algorithm <- 
+    mf$adapt_delta <- NULL
+  mf$method <- "model.frame"
   modelframe <- suppressWarnings(eval(mf, parent.frame()))
-  mt <- modelframe$terms
-  Y <- modelframe$y
-  X <- modelframe$x
-  if (!singular.ok) X <- X[,!is.na(modelframe$coefficients),drop = FALSE]
-  w <- modelframe$weights
-  offset <- model.offset(mf)
-  stanfit <- stan_lm.wfit(y = Y, x = X, w, offset, singular.ok = TRUE,
-                          prior = prior,  prior_PD = prior_PD, 
-                          algorithm = algorithm, adapt_delta = adapt_delta, ...)
-
-  fit <- nlist(stanfit, family = gaussian(), formula, offset, 
-               weights = w, x = X, y = Y, data,
-               prior.info = prior, algorithm = "sampling",
-               call = call, terms = mt,
-               model = if (model) model.frame(modelframe) else NULL,
+  mt <- attr(modelframe, "terms")
+  Y <- model.response(modelframe, "numeric")
+  X <- model.matrix(mt, modelframe, contrasts)
+  w <- as.vector(model.weights(modelframe))
+  offset <- as.vector(model.offset(modelframe))
+  stanfit <- stan_lm.wfit(y = Y, x = X, w, offset, singular.ok = singular.ok,
+                          prior = prior, prior_intercept = prior_intercept, 
+                          prior_PD = prior_PD, 
+                          algorithm = algorithm, adapt_delta = adapt_delta, 
+                          ...)
+  fit <- nlist(stanfit, family = gaussian(), formula, offset, weights = w,
+               x = X[,intersect(colnames(X), dimnames(stanfit)[[3]]), drop = FALSE], 
+               y = Y, data = if (missing("data")) environment(formula) else data,
+               prior.info = prior, 
+               algorithm, call, terms = mt,
+               model = if (model) modelframe else NULL,
                na.action = attr(modelframe, "na.action"),
                contrasts = attr(X, "contrasts"))
-  fit <- stanreg(fit)
-  if (!x) fit$x <- NULL
-  if (!y) fit$y <- NULL
-  fit
+  out <- stanreg(fit)
+  out$xlevels <- .getXlevels(mt, modelframe)
+  if (!x) 
+    out$x <- NULL
+  if (!y) 
+    out$y <- NULL
+  
+  return(out)
 }

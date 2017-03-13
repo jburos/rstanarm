@@ -1,5 +1,24 @@
+# Part of the rstanarm package for estimating model parameters
+# Copyright (C) 2015, 2016 Trustees of Columbia University
+# 
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 3
+# of the License, or (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
 # tests can be run using devtools::test() or manually by loading testthat 
 # package and then running the code
+
+set.seed(12345)
 
 MODELS_HOME <- "exec"
 fsep <- .Platform$file.sep
@@ -17,14 +36,16 @@ if (!file.exists(MODELS_HOME)) {
 context("setup")
 test_that("Stan programs are available", {
   message(MODELS_HOME)
-  expect_true(file.exists(MODELS_HOME))  
+  expect_true(file.exists(MODELS_HOME))
+  expect_true(file.exists(file.path(system.file("chunks", package = "rstanarm"), 
+                                    "common_functions.stan")))
+  
 })
   
-stopifnot(require(rstan))
+library(rstan)
 Sys.unsetenv("R_TESTS")
 
 functions <- sapply(dir(MODELS_HOME, pattern = "stan$", full.names = TRUE), function(f) {
-  # mc <- scan(file = f, what = "character", sep = "\n", quiet = TRUE)
   mc <- readLines(f)
   start <- grep("^functions[[:blank:]]*\\{[[:blank:]]*$", mc)
   if (length(start) == 1) {
@@ -33,8 +54,13 @@ functions <- sapply(dir(MODELS_HOME, pattern = "stan$", full.names = TRUE), func
   }
   else return(as.character(NULL))
 })
-functions <- c(readLines(file.path(MODELS_HOME, "common_functions.txt")), 
-               unlist(functions))
+functions <- c(unlist(lapply(file.path(system.file("chunks", package = "rstanarm"), 
+                             c("common_functions.stan",
+                               "bernoulli_likelihoods.stan",
+                               "binomial_likelihoods.stan",
+                               "continuous_likelihoods.stan",
+                               "count_likelihoods.stan")), 
+                      FUN = readLines)), unlist(functions))
 model_code <- paste(c("functions {", functions, "}", "model {}"), collapse = "\n")
 expose_stan_functions(stanc(model_code = model_code, model_name = "Stan Functions"))
 N <- 99L
@@ -135,8 +161,7 @@ test_that("linkinv_gauss returns expected results", {
   for (i in 1:length(links)) {
     eta <- rnorm(N)
     linkinv <- gaussian(link = links[i])$linkinv
-    expect_true(all.equal(if (i == 2) eta else linkinv(eta), 
-                          linkinv_gauss(eta, i)), info = links[i])
+    expect_true(all.equal(linkinv(eta), linkinv_gauss(eta, i)), info = links[i])
   }
 })
 context("Gaussian")
@@ -144,12 +169,8 @@ test_that("pw_gauss returns expected results", {
   for (i in 1:length(links)) {
     eta <- rnorm(N)
     linkinv <- gaussian(link = links[i])$linkinv
-    if (i == 2)
-      expect_true(all.equal(dnorm(0, mean = eta, log = TRUE),
-                            pw_gauss(rep(1,N), eta, 1, i)), info = links[i])
-    else 
-      expect_true(all.equal(dnorm(0, mean = linkinv(eta), log = TRUE),
-                            pw_gauss(rep(0,N), eta, 1, i)), info = links[i])
+    expect_true(all.equal(dnorm(0, mean = linkinv(eta), log = TRUE),
+                          pw_gauss(rep(0,N), eta, 1, i)), info = links[i])
   }
 })
 
@@ -189,7 +210,7 @@ test_that("GammaReg_log returns the expected results", {
     y <- rgamma(N, shape, rate = 1 / linkinv(eta))
     expect_true(all.equal(sum(dgamma(y, shape = shape, 
                                      rate = shape / linkinv(eta), log = TRUE)),
-                          GammaReg_log(y, eta, shape, i, sum(log(y)))), info = links[i])
+                          GammaReg(y, eta, shape, i, sum(log(y)))), info = links[i])
   }
 })
   
@@ -245,8 +266,8 @@ test_that("inv_gaussian returns expected results", {
     linkinv <- inverse.gaussian(link = links[i])$linkinv
     y <- rinvGauss(N, linkinv(eta), lambda)
     expect_true(all.equal(sum(dinvGauss(y, linkinv(eta), lambda, log = TRUE)),
-                          inv_gaussian_log(y, linkinv_inv_gaussian(eta,i), 
-                                           lambda, sum(log(y)), sqrt(y))), 
+                          inv_gaussian(y, linkinv_inv_gaussian(eta,i), 
+                                       lambda, sum(log(y)), sqrt(y))), 
                 info = links[i])
   }
 })
@@ -254,19 +275,25 @@ test_that("inv_gaussian returns expected results", {
 # lm
 N <- 99L
 context("lm")
-test_that("ll_mvn_ols_lp returns expected results", {
+test_that("ll_mvn_ols_qr_lp returns expected results", {
   X <- matrix(rnorm(2 * N), N, 2)
   y <- 1 + X %*% c(2:3) + rnorm(N)
   ols <- lm.fit(cbind(1,X), y)
   b <- coef(ols)
   X <- sweep(X, MARGIN = 2, STATS = colMeans(X), FUN = "-")
-  XtX <- crossprod(X)
   intercept <- 0.5
   beta <- rnorm(2)
   sigma <- rexp(1)
-  expect_true(all.equal(sum(dnorm(y, intercept + X %*% beta, sigma, log = TRUE)),
-                        ll_mvn_ols_lp(beta, b[-1], XtX, intercept, mean(y),
-                                   crossprod(residuals(ols))[1], sigma, N)))
+  SSR <- crossprod(residuals(ols))[1]
+  ll <- sum(dnorm(y, intercept + X %*% beta, sigma, log = TRUE))
+  decomposition <- qr(X)
+  Q <- qr.Q(decomposition)
+  R <- qr.R(decomposition)
+  R_inv <- qr.solve(decomposition, Q)
+  b <- R %*% b[-1]
+  beta <- R %*% beta
+  expect_true(all.equal(ll, ll_mvn_ols_qr_lp(beta, b, intercept, mean(y), 
+                                             SSR, sigma, N)))
 })
 
 # polr
@@ -294,7 +321,11 @@ test_that("pw_polr returns expected results", {
                         start = c(beta, zeta), control = list(maxit = 0))
     Pr <- fitted(model)
     Pr <- sapply(1:N, FUN = function(i) Pr[i,y[i]])
-    expect_equal(log(Pr), pw_polr(y, eta, zeta, i), info = links[i])
+    log_pr <- pw_polr(y, eta, zeta, i, 1)
+    log_Pr <- log(Pr)
+    good <- is.finite(log_pr) & is.finite(log_Pr) & log_Pr > -30
+    expect_equal(log_Pr[good], log_pr[good], info = links[i], 
+                 tolerance = 1e-6)
   }
 })
 rdirichlet <- function(n, alpha) {
@@ -327,6 +358,7 @@ test_that("draw_ystar_rng returns expected results", {
   }
 })
 
+# glmer
 context("glmer")
 test_that("the Stan equivalent of lme4's Z %*% b works", {
   stopifnot(require(lme4))
@@ -336,7 +368,7 @@ test_that("the Stan equivalent of lme4's Z %*% b works", {
     Lind <- group$Lind
     theta <- group$theta
     
-    group <- rstanarm:::pad_reTrms(Z = t(as.matrix(group$Zt)), cnms = group$cnms, 
+    group <- rstanarm:::pad_reTrms(Ztlist = group$Ztlist, cnms = group$cnms, 
                                    flist = group$flist)
     Z <- group$Z
     p <- sapply(group$cnms, FUN = length)
@@ -357,7 +389,7 @@ test_that("the Stan equivalent of lme4's Z %*% b works", {
     
     z_b <- rnorm(ncol(Z))
     b <- make_b(z_b, theta_L, p, l)
-    mark <- grepl("_NEW_", colnames(Z), fixed = TRUE)
+    mark <- colnames(Z) == ""
     expect_equal(b[!mark], as.vector(Matrix::t(Lambdati) %*% z_b[!mark]), 
                  tol = 1e-14)
     
@@ -365,6 +397,14 @@ test_that("the Stan equivalent of lme4's Z %*% b works", {
     Zb <- test_csr_matrix_times_vector(nrow(Z), ncol(Z), parts$w, 
                                        parts$v, parts$u, b)
     expect_equal(Zb, as.vector(Z %*% b), tol = 1e-14)
+    if ( FALSE && all(sapply(group$cnms, FUN = function(x) {
+        length(x) == 1 && x == "(Intercept)"
+      })) ) { # reenable with new expose_stan_functions
+      V <- matrix(parts$v, nrow = sum(p), ncol = nrow(Z))
+      expect_true(all(V == 
+                        t(as.matrix(as.data.frame(make_V(nrow(Z), nrow(V), parts$v))))))
+      expect_equal(Zb, apply(V, 2, FUN = function(v) sum(b[v])))
+    }
   }
   test_lme4(glFormula(Reaction ~ Days + (Days | Subject), data = sleepstudy)$reTrms)
   test_lme4(glFormula(Reaction ~ Days + (Days || Subject), data = sleepstudy)$reTrms)
@@ -383,5 +423,36 @@ test_that("the Stan equivalent of lme4's Z %*% b works", {
                         (1 + sne + cloudcover + prewetness||echomotion),
                       data=clouds, family = gaussian)$reTrms)
   test_lme4(glFormula(angle ~ recipe + temp + (1|recipe:replicate), data = cake)$reTrms)
+  test_lme4(glFormula(diameter ~ (1|plate) + (1|sample), data = Penicillin)$reTrms)
 })
 
+context("glmer")
+test_that("the Cornish-Fisher expansion from standard normal to Student t works", {
+  df <- exp(1) / pi
+  approx_t <- sapply(rnorm(1000), FUN = CFt, df = df)
+  expect_true(ks.test(approx_t, "pt", df = df, exact = TRUE)$p.value > 0.05)
+})
+
+# betareg
+links <- c("logit", "probit", "cloglog", "cauchit", "log")
+
+context("betareg")
+test_that("linkinv_beta returns expected results", {
+  for (i in 1:length(links)) {
+    eta <- -abs(rnorm(N))
+    linkinv <- binomial(link = links[i])$linkinv
+    expect_true(all.equal(linkinv(eta), 
+                          linkinv_beta(eta, i)), info = links[i])
+  }
+})
+context("betareg")
+test_that("pw_beta and ll_beta_lp return expected results", {
+  for (i in 1:length(links)) {
+    eta <- -abs(rnorm(N))
+    mu <- linkinv_beta(eta, i)
+    dispersion <- 4/3
+    linkinv <- binomial(link = links[i])$linkinv
+    ll <- dbeta(1/3, mu*dispersion, (1-mu)*dispersion, log = TRUE)
+    expect_true(all.equal(ll, pw_beta(rep(1/3,N) , eta, dispersion, i)), info = links[i])
+  }
+})
