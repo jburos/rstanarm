@@ -2167,7 +2167,7 @@ make_assoc_parts <- function(newdata, assoc, id_var, time_var,
 
   # Apply lag
   lag <- assoc["which_lag",][[m]]
-  if (!lag == 0) {
+  if (length(lag) > 0 && !lag == 0) {
     times <- lapply(times, function(x, lag) {
       newtimes <- x - lag
       newtimes[newtimes < 0] <- 0.0  # use baseline where lagged t is before baseline
