@@ -364,35 +364,45 @@ pp_eta <- function(object, data, draws = NULL, m = NULL) {
 
 pp_b_ord <- function(b, Z_names) {
   b_ord <- function(x) {
+    # find x as-is
     m <- grep(paste0("b[", x, "]"), colnames(b), fixed = TRUE)
     len <- length(m)
     if (len == 1)
       return(m)
     if (len > 1)
-      stop("multiple matches bug")
-    m <- grep(paste0("b[", sub(" (.*):.*$", " \\1:_NEW_\\1", x), "]"),
-              colnames(b), fixed = TRUE)
-    if (len == 1)
-      return(m)
-    if (len > 1)
-      stop("multiple matches bug")
-    x <- strsplit(x, split = ":", fixed = TRUE)[[1]]
-    stem <- strsplit(x[[1]], split = " ", fixed = TRUE)[[1]]
-    x <- paste(x[1], x[2], paste0("_NEW_", stem[2]), x[2], sep = ":")
-    m <- grep(paste0("b[", x, "]"), colnames(b), fixed = TRUE)
+      stop(paste0("multiple matches bug: ", x))
+    # try _NEW_ version of x
+    # note: when x = "Long1|poly(months, degree = 2)1 usubjid:E1021003"
+    # xnew = "b[Long1|poly(months, degree = 2)1 usubjid:_NEW_usubjid]"
+    xnew <- paste0("b[", sub("^(.*)\\b(.+?):.*$", "\\1\\2:_NEW_\\2", x), "]")
+    m <- grep(xnew, colnames(b), fixed = TRUE)
     len <- length(m)
     if (len == 1)
       return(m)
     if (len > 1)
-      stop("multiple matches bug")
-    x <- paste(paste(stem[1], stem[2]), paste0("_NEW_", stem[2]), sep = ":")
-    m <- grep(paste0("b[", x, "]"), colnames(b), fixed = TRUE)
+      stop(paste0("multiple matches bug: ", x, " -> ", xnew))
+    # this part may have an issue:
+    #   e.g. starting with x = "Long1|(Intercept) usubjid:E1021003" 
+    #   get x = c("Long1|(Intercept) usubjid", "E1021003")
+    #   and stem = c("Long1|(Intercept)", "usubjid")
+    #   finally x = "Long1|(Intercept) usubjid:E1021003:_NEW_usubjid:E1021003"
+    xnew <- strsplit(x, split = ":", fixed = TRUE)[[1]]
+    stem <- strsplit(xnew[[1]], split = " ", fixed = TRUE)[[1]]
+    xnew <- paste(xnew[1], xnew[2], paste0("_NEW_", stem[2]), xnew[2], sep = ":")
+    m <- grep(paste0("b[", xnew, "]"), colnames(b), fixed = TRUE)
     len <- length(m)
     if (len == 1)
       return(m)
     if (len > 1)
-      stop("multiple matches bug")
-    stop("no matches bug")
+      stop(paste0("multiple matches bug: ", x))
+    xnew <- paste(paste(stem[1], stem[2]), paste0("_NEW_", stem[2]), sep = ":")
+    m <- grep(paste0("b[", xnew, "]"), colnames(b), fixed = TRUE)
+    len <- length(m)
+    if (len == 1)
+      return(m)
+    if (len > 1)
+      stop(paste0("multiple matches bug: ", x))
+    stop(paste0("no matches bug: ", x))
   }
   ord <- sapply(Z_names, FUN = b_ord)
   b[, ord, drop = FALSE]
