@@ -265,7 +265,8 @@ posterior_survfit <- function(object, newdataLong = NULL, newdataEvent = NULL,
     # normalize `id` representation among all datasets
     # (because `id` type may have been stored as a factor in ndL)
     ndL_has_factors <- lapply(ndL, FUN = function(x) is.factor(x[[id_var]]))
-    if (any(ndL_has_factors == TRUE)) {
+    ndE_has_factor <- is.factor(ndE[[id_var]])
+    if (any(ndL_has_factors == TRUE) && ndE_has_factor == FALSE) {
       if (!all(ndL_has_factors == TRUE)) {
         stop('Some but not all ndL data use factors for id_var. Clean conversion to chr not yet implemented.')
       }
