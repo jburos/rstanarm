@@ -261,7 +261,17 @@ posterior_survfit <- function(object, newdataLong = NULL, newdataEvent = NULL,
     stop("Both newdataLong and newdataEvent must be supplied together.")
   if (is.null(newdataLong)) { # user did not specify newdata
     ndL <- model.frame(object)[1:M]
-    ndE <- model.frame(object)$Event
+    ndE <- model.frame(object)$Event 
+    # normalize `id` representation among all datasets
+    # (because `id` type may have been stored as a factor in ndL)
+    ndL_has_factors <- lapply(ndL, FUN = function(x) is.factor(x[[id_var]]))
+    if (any(ndL_has_factors == TRUE)) {
+      if (!all(ndL_has_factors == TRUE)) {
+        stop('Some but not all ndL data use factors for id_var. Clean conversion to chr not yet implemented.')
+      }
+      # following code assumes all ndL datasets are treated similarly
+      ndL <- lapply(ndL, FUN = function(x) {x[[id_var]] <- as.character(x[[id_var]]); x})
+    }
   } else { # user specified newdata
     newdatas <- validate_newdatas(object, newdataLong, newdataEvent)
     ndL <- newdatas[1:M]
