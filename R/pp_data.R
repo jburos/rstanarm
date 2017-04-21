@@ -105,6 +105,10 @@ pp_data <-
     NULL else lapply(mf[isFac], levels)
   mfnew <- model.frame(delete.response(Terms), newdata, xlev = orig_levs)
   x <- model.matrix(RHS, data = mfnew, contrasts.arg = attr(x, "contrasts"))
+  if (is.stanjm(object) & object$basehaz$type_name != 'weibull' & m == 'Event') {
+    # remove Intercept term, if present
+    x <- x[ ,-1*grep(colnames(x), pattern='(Intercept)')]
+  }
   return(x)
 }
 
