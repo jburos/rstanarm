@@ -583,7 +583,14 @@ ll_jm <- function(object, data, pars, include_b = FALSE, sum = FALSE, ...) {
       stop("Bug found: elements of 'll_long' should be same length as 'll_event'.")
     if (include_b && !identical(length(ll_b), length(ll_event)))
       stop("Bug found: length of 'll_b' should be equal to length of 'll_event'.")
-  }  
+  } 
+  # check the values of various components
+  if (is.infinite(ll_event))
+      stop("Bug found: value of 'll_event' is Infinite")
+  if (any(lapply(ll_long, FUN = is.infinite) == TRUE))
+      stop("Bug found: value of 'll_long' is Infinite")
+  if (include_b && is.infinite(ll_b))
+      stop("Bug found: value of 'll_b' is Infinite")
   # sum the various components (long + event + random effects)
   val <- Reduce('+', c(ll_long, list(ll_event)))
   if (include_b && is.matrix(val)) {
