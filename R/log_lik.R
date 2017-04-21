@@ -281,7 +281,9 @@ ll_args.stanjm <- function(object, data, pars, m = 1,
   draws <- nlist(f)
   stanmat <- pars$stanmat # potentially a stanmat with a single draw
   nms <- collect_nms(colnames(stanmat), get_M(object))
-  y <- eval(formula(object, m = m)[[2L]], data$ndL[[m]])
+  y <- try(eval(formula(object, m = m)[[2L]], data$ndL[[m]]), silent = T)
+  if (inherits(y, 'try-error'))
+    y <- data$ndL[[m]][[1]] # case where formula already eval'd on data
   x <- data$yX[[m]]
   z <- t(data$yZt[[m]])
   if (!is.binomial(fname)) {
