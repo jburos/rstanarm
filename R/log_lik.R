@@ -589,8 +589,8 @@ ll_jm <- function(object, data, pars, include_b = FALSE, sum = FALSE, ...) {
   # check the values of various components
   if (is.infinite(ll_event))
       stop("Bug found: value of 'll_event' is Infinite")
-  if (any(lapply(ll_long, FUN = is.infinite) == TRUE))
-      stop("Bug found: value of 'll_long' is Infinite")
+  #if (any(lapply(ll_long, FUN = is.infinite) == TRUE))
+  #    stop("Bug found: value of 'll_long' is Infinite")
   if (include_b && is.infinite(ll_b))
       stop("Bug found: value of 'll_b' is Infinite")
   # sum the various components (long + event + random effects)
