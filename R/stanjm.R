@@ -64,11 +64,15 @@ stanjm <- function(object) {
   
   # Linear predictor, fitted values
   y_eta <- lapply(1:M, function(m) linear_predictor.default(y_coefs[[m]], object$x[[m]], object$offset))
-  y_mu  <- lapply(1:M, function(m) object$family[[m]]$linkinv(y_eta[[m]]))
+  y_mu  <- try(lapply(1:M, function(m) object$family[[m]]$linkinv(y_eta[[m]])), silent = TRUE)
+  if (inherits(y_mu, 'try-error'))
+    y_mu <- lapply(1:M, function(M) character(0))
 
   # Residuals
   y_tmp <- lapply(1:M, function(m) if (is.factor(object$y[[m]])) fac2bin(object$y[[m]]) else object$y[[m]])
-  y_residuals <- lapply(1:M, function(m) y_tmp[[m]] - y_mu[[m]])
+  y_residuals <- try(lapply(1:M, function(m) y_tmp[[m]] - y_mu[[m]]), silent = TRUE)
+  if (inherits(y_residuals, 'try-error'))
+    y_residuals <- lapply(1:M, function(m) character(0))
 
   # Observation labels
   y_nms      <- lapply(object$y, names)
