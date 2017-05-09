@@ -28,7 +28,7 @@
 	    }
 	    else if (family[m] == 5) {  // binomial
 	      real dummy;  // irrelevant but useful for testing
-          dummy = ll_binom_lp(y_int[I1:I2], trials[idx[m,1]:idx[m,2]], eta_tmp, link[m]);	  
+          target += ll_binom_lp(y_int[I1:I2], trials[idx[m,1]:idx[m,2]], eta_tmp, link[m]);	  
 	    }
 	    else if (family[m] == 6 || family[m] == 8) {  // poisson or poisson-gamma
           if (link[m] == 1) target += poisson_log_lpmf(y_int[I1:I2] | eta_tmp);
