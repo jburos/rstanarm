@@ -1355,9 +1355,13 @@ handle_glmod <- function(mc, family, supported_families, supported_links,
     ord    <- order(y)
     y      <- y     [ord]
     trials <- trials[ord]
-    xtemp  <- xtemp [ord, , drop = FALSE]  
+    xtemp  <- xtemp [ord, , drop = FALSE]
+    Ztlist_attrs <- attributes(Ztlist)
     Ztlist <- lapply(Ztlist, function(x) x[, ord, drop = FALSE]) 
-    flist  <- lapply(flist,  function(x) x[ord]) 
+    attributes(Ztlist) <- Ztlist_attrs
+    flist_attrs <- attributes(flist)  
+    flist  <- lapply(flist,  function(x) x[ord])
+    attributes(flist) <- flist_attrs 
     N01    <- sapply(0:1,    function(x) sum(y == x))
   } else {
     ord    <- NULL
