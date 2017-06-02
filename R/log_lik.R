@@ -498,7 +498,9 @@ ll_event <- function(object, data, pars, one_draw = FALSE, survprob = FALSE) {
   if (one_draw) {
     aXq <- make_assoc_terms(parts = data$assoc_parts, assoc = assoc, 
                             family = family, beta = pars$beta, b = pars$b)
-    e_eta <- e_eta + linear_predictor.default(pars$abeta, aXq)
+    lp_assoc <- linear_predictor.default(pars$abeta, aXq)
+    if (length(lp_assoc)>0)
+      e_eta <- e_eta + lp_assoc
   } else {
     aXq <- matrix(NA, NROW(data$eXq), NCOL(pars$abeta))
     for (s in 1:NROW(e_eta)) {
@@ -507,7 +509,9 @@ ll_event <- function(object, data, pars, one_draw = FALSE, survprob = FALSE) {
       b_s     <- lapply(pars$b,    function(x) x[s,])
       aXq_s   <- make_assoc_terms(parts = data$assoc_parts, assoc = assoc, 
                                   family = family, beta = beta_s, b = b_s)
-      e_eta[s,] <- e_eta[s,] + linear_predictor.default(abeta_s, aXq_s)
+      lp_assoc <- linear_predictor.default(abeta_s, aXq_s)
+      if (length(lp_assoc)>0)
+        e_eta[s,] <- e_eta[s,] + lp_assoc
     }
   }
   # Baseline hazard
