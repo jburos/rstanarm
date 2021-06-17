@@ -1,5 +1,5 @@
 # Part of the rstanarm package for estimating model parameters
-# Copyright (C) 2013, 2014, 2015, 2016 Trustees of Columbia University
+# Copyright (C) 2013, 2014, 2015, 2016, 2017 Trustees of Columbia University
 # 
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -19,22 +19,22 @@
 #' @export
 #' @param z For \code{stan_betareg.fit}, a regressor matrix for \code{phi}.
 #'   Defaults to an intercept only.
-stan_betareg.fit <- function(x, y, z = NULL, 
-                             weights = rep(1, NROW(x)), 
-                             offset = rep(0, NROW(x)),
-                             link = c("logit", "probit", "cloglog", 
-                                      "cauchit", "log", "loglog"), 
-                             link.phi = NULL, ...,
-                             prior = normal(), 
-                             prior_intercept = normal(),
-                             prior_z = normal(), 
-                             prior_intercept_z = normal(),
-                             prior_phi = cauchy(0, 5),
-                             prior_PD = FALSE, 
-                             algorithm = c("sampling", "optimizing", 
-                                           "meanfield", "fullrank"),
-                             adapt_delta = NULL, 
-                             QR = FALSE) {
+#'   
+stan_betareg.fit <- 
+  function(x, y, z = NULL, 
+           weights = rep(1, NROW(x)), 
+           offset = rep(0, NROW(x)),
+           link = c("logit", "probit", "cloglog", "cauchit", "log", "loglog"), 
+           link.phi = NULL, ...,
+           prior = normal(autoscale=TRUE), 
+           prior_intercept = normal(autoscale=TRUE),
+           prior_z = normal(autoscale=TRUE), 
+           prior_intercept_z = normal(autoscale=TRUE),
+           prior_phi = exponential(autoscale=TRUE),
+           prior_PD = FALSE, 
+           algorithm = c("sampling", "optimizing", "meanfield", "fullrank"),
+           adapt_delta = NULL, 
+           QR = FALSE) {
   
   algorithm <- match.arg(algorithm)
   
@@ -72,7 +72,8 @@ stan_betareg.fit <- function(x, y, z = NULL,
     prior_mean <- prior_mean_for_intercept <- prior_mean_for_intercept_z <- prior_mean_z <-
     prior_scale <- prior_scale_for_intercept <- prior_scale_for_intercept_z <-
     prior_df_for_aux <- prior_dist_for_aux <- prior_mean_for_aux <- prior_scale_for_aux <-
-    xbar <- xtemp <- prior_autoscale <- prior_autoscale_z <- global_prior_scale_z <- NULL
+    xbar <- xtemp <- prior_autoscale <- prior_autoscale_z <- global_prior_scale_z <- 
+    global_prior_df_z <- slab_df <- slab_scale <- slab_df_z <- slab_scale_z <- NULL
 
   sparse <- FALSE
   x_stuff <- center_x(x, sparse)
@@ -100,7 +101,7 @@ stan_betareg.fit <- function(x, y, z = NULL,
     assign(i, prior_stuff[[i]])
   
   prior_intercept_stuff <- handle_glm_prior(prior_intercept, nvars = 1, 
-                                            default_scale = 10, link = link,
+                                            default_scale = 2.5, link = link,
                                             ok_dists = ok_intercept_dists)
   names(prior_intercept_stuff) <- paste0(names(prior_intercept_stuff), 
                                          "_for_intercept")
@@ -114,7 +115,7 @@ stan_betareg.fit <- function(x, y, z = NULL,
     assign(paste0(i,"_z"), prior_stuff_z[[i]])
   
   prior_intercept_stuff_z <- handle_glm_prior(prior_intercept_z, nvars = 1, 
-                                              link = link.phi, default_scale = 10,
+                                              link = link.phi, default_scale = 2.5,
                                               ok_dists = ok_intercept_dists)
   names(prior_intercept_stuff_z) <- paste0(names(prior_intercept_stuff_z), 
                                            "_for_intercept")
@@ -193,18 +194,20 @@ stan_betareg.fit <- function(x, y, z = NULL,
       decomposition <- qr(xtemp)
       sqrt_nm1 <- sqrt(nrow(xtemp) - 1L)
       Q <- qr.Q(decomposition)
-      R_inv <- qr.solve(decomposition, Q) * sqrt_nm1
-      xtemp <- Q * sqrt_nm1
+      if (prior_autoscale) scale_factor <- sqrt(nrow(xtemp) - 1L)
+      else scale_factor <- diag(qr.R(decomposition))[ncol(xtemp)]
+      R_inv <- qr.solve(decomposition, Q) * scale_factor
+      xtemp <- Q * scale_factor
       colnames(xtemp) <- cn
       xbar <- c(xbar %*% R_inv) 
     }
     if (Z_true == 1 && nvars_z > 1) {
       cn_z <- colnames(ztemp)
       decomposition_z <- qr(ztemp)
-      sqrt_nm1_z <- sqrt(nrow(ztemp) - 1L)
       Q_z <- qr.Q(decomposition_z)
-      R_inv_z <- qr.solve(decomposition_z, Q_z) * sqrt_nm1_z
-      ztemp <- Q_z * sqrt_nm1_z
+      if (nvars <= 1) scale_factor <- sqrt(nrow(ztemp) - 1L)
+      R_inv_z <- qr.solve(decomposition_z, Q_z) * scale_factor
+      ztemp <- Q_z * scale_factor
       colnames(ztemp) <- cn_z
       zbar <- c(zbar %*% R_inv_z)
     }
@@ -225,12 +228,16 @@ stan_betareg.fit <- function(x, y, z = NULL,
     prior_dist_for_intercept, prior_mean_for_intercept = c(prior_mean_for_intercept), 
     prior_scale_for_intercept = min(.Machine$double.xmax, prior_scale_for_intercept), 
     prior_df_for_intercept = c(prior_df_for_intercept),
-    prior_dist_for_aux <- prior_dist_for_aux,
+    prior_dist_for_aux = prior_dist_for_aux,
     prior_scale_for_aux = prior_scale_for_aux %ORifINF% 0,
-    prior_df_for_aux <- c(prior_df_for_aux),
-    prior_mean_for_aux <- c(prior_mean_for_aux),
+    prior_df_for_aux = c(prior_df_for_aux),
+    prior_mean_for_aux = c(prior_mean_for_aux),
+    prior_dist_for_smooth = 0L, prior_mean_for_smooth = array(NA_real_, dim = 0), 
+    prior_scale_for_smooth = array(NA_real_, dim = 0),
+    prior_df_for_smooth = array(NA_real_, dim = 0), K_smooth = 0L,
+    S = matrix(NA_real_, nrow(xtemp), ncol = 0L), smooth_map = integer(),
     has_weights = length(weights) > 0, weights = weights,
-    has_offset = length(offset) > 0, offset = offset,
+    has_offset = length(offset) > 0, offset_ = offset,
     t = 0L, 
     p = integer(), 
     l = integer(), 
@@ -255,12 +262,14 @@ stan_betareg.fit <- function(x, y, z = NULL,
     prior_df_for_intercept_z = c(prior_df_for_intercept_z),
     prior_scale_for_intercept_z = min(.Machine$double.xmax, prior_scale_for_intercept_z), 
     # for hs family priors
-    global_prior_scale_z,
+    global_prior_scale_z, global_prior_df_z, slab_df_z, slab_scale_z,
     # for product normal prior
     num_normals = if (prior_dist == 7) 
       as.array(as.integer(prior_df)) else integer(0),
     num_normals_z = if (prior_dist_z == 7) 
-      as.array(as.integer(prior_df_z)) else integer(0)
+      as.array(as.integer(prior_df_z)) else integer(0),
+    len_y = nrow(xtemp), SSfun = 0L, input = double(), Dose = double(),
+    compute_mean_PPD = TRUE
     )
 
   # call stan() to draw from posterior distribution
@@ -297,12 +306,12 @@ stan_betareg.fit <- function(x, y, z = NULL,
   
 
   if (algorithm == "optimizing") {
-    out <-
-      optimizing(stanfit,
-                 data = standata,
-                 draws = 1000,
-                 constrained = TRUE,
-                 ...)
+    optimizing_args <- list(...)
+    if (is.null(optimizing_args$draws)) optimizing_args$draws <- 1000L
+    optimizing_args$object <- stanfit
+    optimizing_args$data <- standata
+    optimizing_args$constrained <- TRUE
+    out <- do.call(optimizing, args = optimizing_args)
     check_stanfit(out)
     out$par <- out$par[!grepl("eta_z", names(out$par))]
     out$theta_tilde <- out$theta_tilde[, !grepl("eta_z", colnames(out$theta_tilde))]
@@ -343,10 +352,11 @@ stan_betareg.fit <- function(x, y, z = NULL,
     } else { # algorithm either "meanfield" or "fullrank"
       stanfit <- rstan::vb(stanfit, pars = pars, data = standata,
                            algorithm = algorithm, init = 0.001, ...)
-      if (algorithm == "meanfield" && !QR) 
-        msg_meanfieldQR()
+      if (!QR) 
+        recommend_QR_for_vb()
     }
-    check_stanfit(stanfit)
+    check <- check_stanfit(stanfit)
+    if (!isTRUE(check)) return(standata)
     if (QR) {
       if (ncol(xtemp) > 1) {
         thetas <- extract(stanfit, pars = "beta", inc_warmup = TRUE, 

@@ -1,5 +1,5 @@
 # Part of the rstanarm package for estimating model parameters
-# Copyright (C) 2015, 2016 Trustees of Columbia University
+# Copyright (C) 2015, 2016, 2017 Trustees of Columbia University
 # 
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,7 +23,7 @@
 #' those pages are provided in the \strong{See Also} section, below.
 #' 
 #' @name stanreg-methods
-#' @aliases VarCorr fixef ranef ngrps sigma
+#' @aliases VarCorr fixef ranef ngrps sigma nsamples
 #' 
 #' @templateVar stanregArg object,x
 #' @template args-stanreg-object
@@ -52,11 +52,14 @@
 #' }
 #' \item{\code{confint}}{
 #' For models fit using optimization, confidence intervals are returned via a 
-#' call to \code{\link[stats]{confint.default}}. If \code{algorithm} is 
+#' call to \code{\link[stats:confint]{confint.default}}. If \code{algorithm} is 
 #' \code{"sampling"}, \code{"meanfield"}, or \code{"fullrank"}, the
 #' \code{confint} will throw an error because the
 #' \code{\link{posterior_interval}} function should be used to compute Bayesian 
 #' uncertainty intervals.
+#' }
+#' \item{\code{nsamples}}{
+#' The number of draws from the posterior distribution obtained
 #' }
 #' }
 #' 
@@ -218,39 +221,107 @@ ngrps.stanreg <- function(object, ...) {
 
 #' @rdname stanreg-methods
 #' @export
+#' @export nsamples
+#' @importFrom rstantools nsamples
+nsamples.stanreg <- function(object, ...) {
+  posterior_sample_size(object)
+}
+
+#' @rdname stanreg-methods
+#' @export
 #' @export ranef
 #' @importFrom lme4 ranef
 #' 
 ranef.stanreg <- function(object, ...) {
-  all_names <- if (used.optimizing(object))
-    rownames(object$stan_summary) else object$stanfit@sim$fnames_oi
-  sel <- b_names(all_names)
-  ans <- object$stan_summary[sel, select_median(object$algorithm)]
-  # avoid returning the extra levels that were included
-  ans <- ans[!grepl("_NEW_", names(ans), fixed = TRUE)]
-  fl <- .flist(object)
-  levs <- lapply(fl, levels)
-  asgn <- attr(fl, "assign")
-  cnms <- .cnms(object)
-  mark <- !grepl("^Xr", names(cnms))
-  fl <- fl[mark]
-  asgn <- asgn[mark]
-  levs <- levs[mark]
-  cnms <- cnms[mark]
-  nc <- vapply(cnms, length, 1L)
-  nb <- nc * vapply(levs, length, 1L)
-  nbseq <- rep.int(seq_along(nb), nb)
-  ml <- split(ans, nbseq)
-  for (i in seq_along(ml)) {
-    ml[[i]] <- matrix(ml[[i]], ncol = nc[i], byrow = TRUE, 
-                      dimnames = list(NULL, cnms[[i]]))
+  .glmer_check(object)
+  point_estimates <- object$stan_summary[, select_median(object$algorithm)]
+  out <- ranef_template(object)
+  group_vars <- names(out)
+  
+  for (j in seq_along(out)) {
+    tmp <- out[[j]]
+    pars <- colnames(tmp) 
+    levs <- rownames(tmp)
+    levs <- gsub(" ", "_", levs) 
+    for (p in seq_along(pars)) {
+      stan_pars <- paste0("b[", pars[p], " ", group_vars[j],  ":", levs, "]")
+      tmp[[pars[p]]] <- unname(point_estimates[stan_pars])
+    }
+    out[[j]] <- tmp
   }
-  ans <- lapply(seq_along(fl), function(i) {
-    data.frame(do.call(cbind, ml[i]), row.names = levs[[i]], 
-               check.names = FALSE)
-  })
-  names(ans) <- names(fl)
-  structure(ans, class = "ranef.mer")
+  out
+}
+
+# Call lme4 to get the right structure for ranef objects
+#' @importFrom lme4 lmerControl glmerControl nlmerControl lmer glmer nlmer
+ranef_template <- function(object) {
+  stan_fun <- object$stan_function %ORifNULL% "stan_glmer"
+  
+  if (stan_fun != "stan_gamm4") {
+    new_formula <- formula(object)
+  } else {
+    # remove the part of the formula with s() terms just so we can call lme4
+    # to get the ranef template without error
+    new_formula_rhs <- as.character(object$call$random)[2]
+    new_formula_lhs <- as.character(formula(object))[2]
+    new_formula <- as.formula(paste(new_formula_lhs, "~", new_formula_rhs))
+  }
+  
+  if (stan_fun != "stan_nlmer" && 
+      (is.gaussian(object$family$family) || is.beta(object$family$family))) {
+    stan_fun <- "stan_lmer"
+  }
+  lme4_fun <- switch(
+    stan_fun,
+    "stan_lmer" = "lmer",
+    "stan_nlmer" = "nlmer",
+    "glmer" # for stan_glmer, stan_glmer.nb, stan_gamm4 (unless gaussian or beta)
+  )
+  cntrl_args <- list(optimizer = "Nelder_Mead", optCtrl = list(maxfun = 1))
+  if (lme4_fun != "nlmer") { # nlmerControl doesn't allow these
+    cntrl_args$check.conv.grad <- "ignore"
+    cntrl_args$check.conv.singular <- "ignore"
+    cntrl_args$check.conv.hess <- "ignore"
+    cntrl_args$check.nlev.gtreq.5 <- "ignore"
+    cntrl_args$check.nobs.vs.rankZ <- "ignore"
+    cntrl_args$check.nobs.vs.nlev <- "ignore"
+    cntrl_args$check.nobs.vs.nRE <- "ignore"
+    if (lme4_fun == "glmer") {
+      cntrl_args$check.response.not.const <- "ignore"
+    }
+  }
+  
+  cntrl <- do.call(paste0(lme4_fun, "Control"), cntrl_args)
+  
+  fit_args <- list(
+    formula = new_formula,
+    data = object$data,
+    control = cntrl
+  )
+  
+  if (lme4_fun == "nlmer") { # create starting values to avoid error
+    fit_args$start <- unlist(getInitial(
+      object = as.formula(as.character(formula(object))[2]),
+      data = object$data,
+      control = list(maxiter = 0, warnOnly = TRUE)
+    ))
+  }
+  
+  family <- family(object)
+  fam <- family$family
+  if (!(fam %in% c("gaussian", "beta"))) {
+    if (fam == "neg_binomial_2") {
+      family <- stats::poisson()
+    } else if (fam == "beta_binomial") {
+      family <- stats::binomial()
+    } else if (fam == "binomial" && family$link == "clogit") {
+      family <- stats::binomial()
+    }
+    fit_args$family <- family
+  }
+  
+  lme4_fit <- suppressWarnings(do.call(lme4_fun, args = fit_args))
+  ranef(lme4_fit)
 }
 
 
@@ -275,26 +346,38 @@ sigma.stanreg <- function(object, ...) {
 #' @importFrom nlme VarCorr
 #' @importFrom stats cov2cor
 VarCorr.stanreg <- function(x, sigma = 1, ...) {
-  mat <- as.matrix(x)
+  dots <- list(...) # used to pass stanmat with a single draw for posterior_survfit
+  mat <- if ("stanmat" %in% names(dots)) as.matrix(dots$stanmat) else as.matrix(x)
   cnms <- .cnms(x)
   useSc <- "sigma" %in% colnames(mat)
-  if (useSc) sc <- mat[,"sigma"]
-  else sc <- 1
+  if (useSc) sc <- mat[,"sigma"] else sc <- 1
   Sigma <- colMeans(mat[,grepl("^Sigma\\[", colnames(mat)), drop = FALSE])
   nc <- vapply(cnms, FUN = length, FUN.VALUE = 1L)
   nms <- names(cnms)
   ncseq <- seq_along(nc)
-  spt <- split(Sigma, rep.int(ncseq, (nc * (nc + 1)) / 2))
-  ans <- lapply(ncseq, function(i) {
-    Sigma <- matrix(0, nc[i], nc[i])
-    Sigma[lower.tri(Sigma, diag = TRUE)] <- spt[[i]]
-    Sigma <- Sigma + t(Sigma)
-    diag(Sigma) <- diag(Sigma) / 2
-    rownames(Sigma) <- colnames(Sigma) <- cnms[[i]]
-    stddev <- sqrt(diag(Sigma))
-    corr <- cov2cor(Sigma)
-    structure(Sigma, stddev = stddev, correlation = corr)
-  })
+  if (length(Sigma) == sum(nc * nc)) { # stanfit contains all Sigma entries
+    spt <- split(Sigma, rep.int(ncseq, nc * nc))
+    ans <- lapply(ncseq, function(i) {
+      Sigma <- matrix(0, nc[i], nc[i])
+      Sigma[,] <- spt[[i]]
+      rownames(Sigma) <- colnames(Sigma) <- cnms[[i]]
+      stddev <- sqrt(diag(Sigma))
+      corr <- cov2cor(Sigma)
+      structure(Sigma, stddev = stddev, correlation = corr)
+    })       
+  } else { # stanfit contains lower tri Sigma entries
+    spt <- split(Sigma, rep.int(ncseq, (nc * (nc + 1)) / 2))
+    ans <- lapply(ncseq, function(i) {
+      Sigma <- matrix(0, nc[i], nc[i])
+      Sigma[lower.tri(Sigma, diag = TRUE)] <- spt[[i]]
+      Sigma <- Sigma + t(Sigma)
+      diag(Sigma) <- diag(Sigma) / 2
+      rownames(Sigma) <- colnames(Sigma) <- cnms[[i]]
+      stddev <- sqrt(diag(Sigma))
+      corr <- cov2cor(Sigma)
+      structure(Sigma, stddev = stddev, correlation = corr)
+    })    
+  }
   names(ans) <- nms
   structure(ans, sc = mean(sc), useSc = useSc, class = "VarCorr.merMod")
 }
@@ -313,10 +396,9 @@ family.stanreg <- function(object, ...) object$family
 #' @keywords internal
 #' @export
 #' @param formula,... See \code{\link[stats]{model.frame}}.
-#' @param fixed.only See \code{\link[lme4]{model.frame.merMod}}.
+#' @param fixed.only See \code{\link[lme4:merMod-class]{model.frame.merMod}}.
 #' 
 model.frame.stanreg <- function(formula, fixed.only = FALSE, ...) {
-  if (inherits(formula, "gamm4")) return(formula$glmod$model)
   if (is.mer(formula)) {
     fr <- formula$glmod$fr
     if (fixed.only) {
@@ -337,7 +419,7 @@ model.frame.stanreg <- function(formula, fixed.only = FALSE, ...) {
 #' @param object,... See \code{\link[stats]{model.matrix}}.
 #' 
 model.matrix.stanreg <- function(object, ...) {
-  if (inherits(object, "gamm4")) return(object$glmod$raw_X)
+  if (inherits(object, "gamm4")) return(object$jam$X)
   if (is.mer(object)) return(object$glmod$X)
     
   NextMethod("model.matrix")
@@ -351,11 +433,8 @@ model.matrix.stanreg <- function(object, ...) {
 #' @param ... Can contain \code{fixed.only} and \code{random.only} arguments 
 #'   that both default to \code{FALSE}.
 #' 
-formula.stanreg <- function(x, ...) {
-  if (inherits(x, "gamm4")) return(x$formula)
-  if (is.mer(x)) 
-    return(formula_mer(x, ...))
-  
+formula.stanreg <- function(x, ..., m = NULL) {
+  if (is.mer(x) && !isTRUE(x$stan_function == "stan_gamm4")) return(formula_mer(x, ...))
   x$formula
 }
 
@@ -395,11 +474,13 @@ terms.stanreg <- function(x, ..., fixed.only = TRUE, random.only = FALSE) {
     stop("This method is for stan_glmer and stan_lmer models only.", 
          call. = FALSE)
 }
-.cnms <- function(object) {
+.cnms <- function(object, ...) UseMethod(".cnms")
+.cnms.stanreg <- function(object, ...) {
   .glmer_check(object)
   object$glmod$reTrms$cnms
 }
-.flist <- function(object) {
+.flist <- function(object, ...) UseMethod(".flist")
+.flist.stanreg <- function(object, ...) {
   .glmer_check(object)
   as.list(object$glmod$reTrms$flist)
 }

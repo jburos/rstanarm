@@ -1,5 +1,5 @@
 # Part of the rstanarm package for estimating model parameters
-# Copyright (C) 2015, 2016 Trustees of Columbia University
+# Copyright (C) 2015, 2016, 2017 Trustees of Columbia University
 # 
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -43,6 +43,7 @@
 #' @seealso \code{\link{stanreg-methods}}
 #' 
 #' @examples
+#' if (.Platform$OS.type != "windows" || .Platform$r_arch != "i386") {
 #' \donttest{
 #' if (!exists("example_model")) example(example_model)
 #' # Extract posterior sample after MCMC
@@ -71,7 +72,7 @@
 #' print(colnames(draws))
 #' print(nrow(draws)) # 1000 draws are taken
 #' }
-#' 
+#' }
 as.matrix.stanreg <- function(x, ..., pars = NULL, regex_pars = NULL) {
   pars <- collect_pars(x, pars, regex_pars)
   user_pars <- !is.null(pars)

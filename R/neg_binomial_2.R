@@ -1,5 +1,5 @@
 # Part of the rstanarm package for estimating model parameters
-# Copyright (C) 2015, 2016 Trustees of Columbia University
+# Copyright (C) 2015, 2016, 2017 Trustees of Columbia University
 # 
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -28,15 +28,15 @@
 #' \code{neg_binomial_2} internally.
 #' 
 #' @export
-#' @param link The same as for \code{\link{poisson}}, typically a character
+#' @param link The same as for \code{\link[stats:family]{poisson}}, typically a character
 #'   vector of length one among \code{"log"}, \code{"identity"}, and
 #'   \code{"sqrt"}.
 #' @return An object of class \code{\link[stats]{family}} very similar to
-#'   that of \code{\link[stats]{poisson}} but with a different family name.
+#'   that of \code{\link[stats:family]{poisson}} but with a different family name.
 #' @examples
-#' if (!grepl("^sparc",  R.version$platform))
+#' if (.Platform$OS.type != "windows" || .Platform$r_arch != "i386")
 #' stan_glm(Days ~ Sex/(Age + Eth*Lrn), data = MASS::quine, seed = 123,
-#'          family = neg_binomial_2, QR = TRUE, algorithm = "fullrank") 
+#'          family = neg_binomial_2, QR = TRUE, algorithm = "optimizing") 
 #'                 
 #' # or, equivalently, call stan_glm.nb() without specifying the family
 #'

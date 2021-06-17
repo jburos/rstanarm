@@ -1,5 +1,5 @@
 # Part of the rstanarm package for estimating model parameters
-# Copyright (C) 2016 Trustees of Columbia University
+# Copyright (C) 2016, 2017 Trustees of Columbia University
 # Copyright (C) 2005 Samantha Cook
 #
 # This program is free software; you can redistribute it and/or
@@ -81,15 +81,16 @@
 #' \code{\link{posterior_predict}} to draw from the posterior predictive
 #' distribution.
 #'
-#' \code{\link[bayesplot]{color_scheme_set}} to change the color scheme of the
+#' \code{\link[bayesplot:bayesplot-colors]{color_scheme_set}} to change the color scheme of the
 #' plot.
 #'
 #' @examples
+#' if (.Platform$OS.type != "windows" || .Platform$r_arch != "i386") {
 #' \dontrun{
 #' if (!exists("example_model")) example(example_model)
 #' try(pp_validate(example_model)) # fails with default seed / priors
 #' }
-#'
+#' }
 #' @importFrom ggplot2 rel geom_point geom_segment scale_x_continuous element_line
 #'
 pp_validate <- function(object, nreps = 20, seed = 12345, ...) {
@@ -102,6 +103,8 @@ pp_validate <- function(object, nreps = 20, seed = 12345, ...) {
   }
 
   validate_stanreg_object(object)
+  if (is.stanmvreg(object))
+    STOP_if_stanmvreg("'pp_validate'")
   if (nreps < 2)
     stop("'nreps' must be at least 2.")
 
